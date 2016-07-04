@@ -49,7 +49,7 @@ var mapModule = (function (){
 
   var markers = [];
 
-  function drawMarker (type, coords, name) {
+  function drawMarker (type, coords, id) {
     var latLng = new google.maps.LatLng(coords[0], coords[1]);
     var iconURL = iconURLs[type];
     var marker = new google.maps.Marker({
@@ -59,15 +59,22 @@ var mapModule = (function (){
     // Add marker to markers array, 
     markers.push(marker);
     // Attach a name property to each marker
-    marker.name = name;
+    marker.id = id;
+    marker.type = type;
     marker.setMap(currentMap);
   }
 
+  function removeMarker (type, id) {
+    for(var i = 0; i < markers.length; i++){
+      if(markers[i].type == type && markers[i].id == id) markers[i].setMap(null);
+    }
+  }
 
   return {
     currentMap: currentMap,
     markers: markers,
-    drawMarker: drawMarker
+    drawMarker: drawMarker,
+    removeMarker: removeMarker
   };
 
 }());

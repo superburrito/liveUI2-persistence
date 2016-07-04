@@ -7,49 +7,45 @@ var Activity = require('../../models/activity');
 var Place = require('../../models/place');
 var Promise = require('bluebird');
 
-
-// Get all days
+// Loading all days
 daysRouter.get('/api/days', function(req,res,next){
-	Day.findAll({})
+	Day.findAll({
+		order: 'number ASC'
+	})
 	.then(function(days){
-		res.send(days);
+		if(days.length === 0){
+			Day.create({
+				number: 1
+			})
+			.then(function(createdDay){
+				res.send([createdDay]);
+			});
+		}else{
+			res.send(days);
+		}
 	})
 });
-
-// Get a day
-daysRouter.get('/api/days/:index', function(req,res,next){
-	var dayIndex = req.params.index;
+// Loading a day
+daysRouter.get('/api/days/:dayNum', function(req,res,next){
+	var dayNum = req.params.dayNum;
 	Day.findOne({
 		where: {
-			number: dayIndex
+			number: dayNum
 		},
-		include: [Hotel, Restaurant, Activity]
+		include: [Hotel, Restaurant, Activity],
+		order: 'number ASC'
 	})
 	.then(function(day){
-		console.log("Data for the day:", day);
 		res.send(day);
 	})
 	.catch(next);
 });
-
-// Delete a day
-daysRouter.delete('/api/days/:index', function(req,res,next){
-	var dayIndex = req.params.index;
-	Day.destroy({
-		where: {
-			number: dayIndex
-		}
-	})
-	.catch(next);
-});
-
-
 // Adding a day
 daysRouter.post('/api/days/', function(req,res,next){
 	Day.max('number')
-	.then(function(maxDayIndex){
-		var number = maxDayIndex + 1;
-		return Day.create({
+	.then(function(maxDayNum){
+		var number = maxDayNum + 1;
+	 		return Day.create({
 			number: number
 		})
 	})
@@ -58,34 +54,72 @@ daysRouter.post('/api/days/', function(req,res,next){
 	})
 	.catch(next);
 });
-
-
-// Change a day's hotels, restaurants, and activities
-daysRouter.post('/api/days/:index/hotels', function(req,res,next){
-	var dayIndex = req.params.index;
-	var hotelId = req.body.hotelId;
-	Day.findOne({
+// Deleting a day
+daysRouter.delete('/api/days/:dayNum', function(req,res,next){
+	var dayNum = req.params.dayNum;
+	var subsequentDaysProm = Day.findAll({
 		where: {
-			number: dayIndex
+			number: {
+				$gt: dayNum
+			}
 		}
 	})
-	.then(function(day){
-		return day.update({
-			hotelId: hotelId
+	.then(function(subsequentDays){
+		subsequentDays.forEach(function(day){
+			console.log('Subsequent Day' + day.number + 'number decremented');
+			day.update({
+				number: day.number - 1
+			});
 		});
 	})
-	.then(function(updatedDay){
-		res.send(updatedDay);
+	.then(function(){
+		return Day.destroy({
+			where: {
+				number: dayNum
+			}
+		});
+	})
+	.then(function(deletedDay){
+		console.log('Deleted Day is: ' + deletedDay);
+	})
+	.then(function(){
+		res.end();
 	})
 	.catch(next);
 });
 
-daysRouter.post('/api/days/:index/restaurants', function(req,res,next){
-	var dayIndex = req.params.index;
-	var restaurantId = req.body.restaurantId;
+// Adding hotels, restaurants and activities to a day
+daysRouter.post('/api/days/:dayNum/hotels/:hotelId', function(req,res,next){
+	var dayNum = req.params.dayNum;
+	var hotelId = req.params.hotelId;
+	Day.findOne({
+		where: {
+			number: dayNum
+		}
+	})
+	.then(function(day){
+		day.update({
+			hotelId: hotelId
+		});
+		return Hotel.findOne({
+			where: {
+				id: hotelId
+			}
+		});
+	})
+	.then(function(hotel){
+		console.log('Server: Added hotel placeid is:' + hotel.placeId);
+		res.send(hotel);
+	})
+	.catch(next);
+});
+
+daysRouter.post('/api/days/:dayNum/restaurants/:restaurantId', function(req,res,next){
+	var dayNum = req.params.dayNum;
+	var restaurantId = req.params.restaurantId;
 	var dayProm = Day.findOne({
 		where: {
-			number: dayIndex
+			number: dayNum
 		}
 	});
 	var restProm = Restaurant.findOne({
@@ -95,20 +129,27 @@ daysRouter.post('/api/days/:index/restaurants', function(req,res,next){
 	});
 	Promise.all([dayProm,restProm])
 	.spread(function(day,restaurant){
-			day.addRestaurant(restaurant);
+		return day.addRestaurant(restaurant);
 	})
-	.then(function(updatedDay){
-		res.send(updatedDay);
+	.then(function(){
+		return Restaurant.findOne({
+			where:{
+				id: restaurantId
+			}
+		});
+	})
+	.then(function(addedRestaurant){
+		res.send(addedRestaurant);
 	})
 	.catch(next);
 });
 
-daysRouter.post('/api/days/:index/activities', function(req,res,next){
-	var dayIndex = req.params.index;
-	var activityId = req.body.activityId;
+daysRouter.post('/api/days/:dayNum/activities/:activityId', function(req,res,next){
+	var dayNum = req.params.dayNum;
+	var activityId = req.params.activityId;
 	var dayProm = Day.findOne({
 		where: {
-			number: dayIndex
+			number: dayNum
 		}
 	});
 	var actProm = Activity.findOne({
@@ -118,15 +159,101 @@ daysRouter.post('/api/days/:index/activities', function(req,res,next){
 	});
 	Promise.all([dayProm,actProm])
 	.spread(function(day,activity){
-			day.addActivity(activity);
+		return day.addActivity(activity);
 	})
-	.then(function(updatedDay){
-		res.send(updatedDay);
+	.then(function(){
+		return Activity.findOne({
+			where:{
+				id: activityId
+			}
+		});
+	})
+	.then(function(addedActivity){
+		res.send(addedActivity);
 	})
 	.catch(next);
 });
 
 
+// Deleting hotels, restaurants, and activities from a day
+daysRouter.delete('/api/days/:dayNum/restaurants/:restaurantId', function(req,res,next){
+	var dayNum = req.params.dayNum;
+	var restaurantId = req.params.restaurantId;
+	var dayProm = Day.findOne({
+		where: {
+			number: dayNum
+		}
+	});
+	var restProm = Restaurant.findOne({
+		where: {
+			id: restaurantId
+		}
+	});
+	Promise.all([dayProm,restProm])
+	.spread(function(day,restaurant){
+		return day.removeRestaurant(restaurant);
+	})
+	.then(function(updatedDay){
+		res.end();
+	})
+	.catch(next);
+});
+daysRouter.delete('/api/days/:dayNum/activities/:activityId', function(req,res,next){
+	var dayNum = req.params.dayNum;
+	var activityId = req.params.activityId;
+	var dayProm = Day.findOne({
+		where: {
+			number: dayNum
+		}
+	});
+	var actProm = Activity.findOne({
+		where: {
+			id: activityId
+		}
+	});
+	Promise.all([dayProm,actProm])
+	.spread(function(day,activity){
+		console.log(activity.name + "removed from Day" + day.number);
+		return day.removeActivity(activity);
+	})
+	.then(function(updatedDay){
+		res.end();
+	})
+	.catch(next);
+});
+daysRouter.delete('/api/days/:dayNum/hotels/:hotelId', function(req,res,next){
+	var dayNum = req.params.dayNum;
+	var hotelId = req.params.hotelId;
+	Day.findOne({
+		where: {
+			number: dayNum
+		}
+	})
+	.then(function(day){
+		return day.update({
+			hotelId: null
+		});
+	})
+	.then(function(updatedDay){
+		res.end();
+	})
+	.catch(next);
+});
+
+
+daysRouter.post('/api/places/:placeId', function(req,res,next){
+	var placeId = req.params.placeId;
+	Place.findOne({
+		where: {
+			id: placeId
+		}
+	})
+	.then(function(place){
+		console.log('Coordinates returned are ' + place.location);
+		res.send(place.location);
+	})
+	.catch(next);
+});
 
 
 module.exports = daysRouter;
